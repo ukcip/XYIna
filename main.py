@@ -1,107 +1,105 @@
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-from aiogram.filters import Command
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import StatesGroup, State
-from aiogram.fsm.storage.memory import MemoryStorage
-import os
 import asyncio
+from aiogram import Bot, Dispatcher, F
+from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.filters import Command
+from aiogram.enums import ContentType
 
-TOKEN = os.getenv("8657143749:AAEIPYqLeYTAWdJE26by9JPaELVHIY4fF6M")
-GROUP_ID = -1003421192077
-ADMIN_ID = 8250753514
+TOKEN = "8657143749:AAEIPYqLeYTAWdJE26by9JPaELVHIY4fF6M"
 
 bot = Bot(token=TOKEN)
-dp = Dispatcher(storage=MemoryStorage())
+dp = Dispatcher()
 
-# ------------------ FSM ------------------
-class PaymentStates(StatesGroup):
-    waiting_for_screenshot = State()
+# ID
+ADMIN_ID = 8250753514
+GROUP_ID = -1003421192077
 
-# ------------------ Клавиатуры ------------------
-main_kb = ReplyKeyboardMarkup(
+# Кнопки
+kb = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="Оплата картой"), KeyboardButton(text="Оплата криптой")],
-        [KeyboardButton(text="Донат")]
+        [KeyboardButton(text="💳 Оплата")],
+        [KeyboardButton(text="✅ Я оплатил")]
     ],
     resize_keyboard=True
 )
 
-payment_kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="Я оплатил")],
-        [KeyboardButton(text="Назад")]
-    ],
-    resize_keyboard=True
-)
-
-# ------------------ Приветствие ------------------
+# Старт
 @dp.message(Command("start"))
-async def start(message: types.Message):
+async def start(message: Message):
     await message.answer(
-        "🔥 Добро пожаловать в магазин от @ukcip📦\n"
-        "Здесь вы можете приобрести доступ к привату💸\n"
-        "Выберите способ оплаты:",
-        reply_markup=main_kb
+        "Выберите действие:",
+        reply_markup=kb
     )
 
-# ------------------ Оплата ------------------
-@dp.message(F.text.in_(["Оплата картой", "Оплата криптой"]))
-async def start_payment(message: types.Message):
+# Оплата
+@dp.message(F.text == "💳 Оплата")
+async def pay(message: Message):
     await message.answer(
-        "После оплаты нажмите кнопку 'Я оплатил'",
-        reply_markup=payment_kb
+        "💸 Оплата криптой:\n"
+        "https://t.me/send?start=IVWM9jtSGhiL\n\n"
+        "После оплаты нажмите '✅ Я оплатил'"
     )
 
-# ------------------ Я оплатил ------------------
-@dp.message(F.text == "Я оплатил")
-async def waiting_for_screenshot(message: types.Message, state: FSMContext):
-    await message.answer("Пришлите скрин оплаты:")
-    await state.set_state(PaymentStates.waiting_for_screenshot)
+# Нажал "Я оплатил"
+@dp.message(F.text == "✅ Я оплатил")
+async def paid(message: Message):
+    await message.answer("📸 Пришлите скриншот оплаты")
 
-# ------------------ Получение скрина ------------------
-@dp.message(PaymentStates.waiting_for_screenshot, F.photo)
-async def screenshot_received(message: types.Message, state: FSMContext):
-    await message.forward(GROUP_ID)
+# Приём СКРИНА (ФОТО)
+@dp.message(F.photo)
+async def screenshot(message: Message):
+    user_id = message.from_user.id
+    username = message.from_user.username
+
+    caption = f"💸 Новая оплата!\nID: {user_id}\n@{username}"
+
+    # Отправка в группу
+    await bot.send_photo(
+        chat_id=GROUP_ID,
+        photo=message.photo[-1].file_id,
+        caption=caption
+    )
+
+    await message.answer("⏳ Ваша оплата на рассмотрении, ожидайте 24 часа")
+
+# Команда админа (ответ на сообщение)
+@dp.message(Command("accept"))
+async def accept(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    if not message.reply_to_message:
+        await message.answer("Ответь на сообщение со скрином")
+        return
+
+    text = message.reply_to_message.caption
+
+    if not text:
+        return
+
+    # достаём ID
+    user_id = int(text.split("ID: ")[1].split("\n")[0])
 
     await bot.send_message(
-        GROUP_ID,
-        f"Новая заявка от @{message.from_user.username or message.from_user.id}\n"
-        f"ID: {message.from_user.id}"
+        user_id,
+        "✅ Ваша оплата рассмотрена!\n\n"
+        "Ссылка на приват:\n"
+        "https://t.me/+O9tLSO8g5MsyYThi\n\n"
+        "Нажмите кнопку ниже"
     )
 
-    await message.answer("Ваша оплата на рассмотрении, ожидайте до 24 часов")
-    await state.clear()
-
-# ------------------ Назад ------------------
-@dp.message(F.text == "Назад")
-async def go_back(message: types.Message, state: FSMContext):
-    await state.clear()
-    await message.answer("Вы вернулись в меню", reply_markup=main_kb)
-
-# ------------------ Донат ------------------
-@dp.message(F.text == "Донат")
-async def donate(message: types.Message):
-    await message.answer(
-        "💎 Поддержка проекта\n"
-        "💰 Крипта: http://t.me/send?start=IVjeLAEQlLzA\n"
-        "🪙 TON: UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu\n"
-        "💳 Сбер: 2202208290305953"
+    kb2 = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📩 Я отправил заявку")]],
+        resize_keyboard=True
     )
 
-# ------------------ Админ ------------------
-@dp.message(F.from_user.id == ADMIN_ID)
-async def admin_commands(message: types.Message):
-    if message.text == "/ban":
-        await message.answer("Бан выполнен")
-    elif message.text == "/unban":
-        await message.answer("Разбан выполнен")
-    elif message.text == "/stats":
-        await message.answer("Статистика")
-    elif message.text == "/broadcast":
-        await message.answer("Рассылка")
+    await bot.send_message(user_id, "После подачи нажмите:", reply_markup=kb2)
 
-# ------------------ Запуск ------------------
+# Кнопка "Я отправил заявку"
+@dp.message(F.text == "📩 Я отправил заявку")
+async def done(message: Message):
+    await message.answer("⏳ Ожидайте подтверждения в течение 24 часов")
+
+# Запуск
 async def main():
     await dp.start_polling(bot)
 
