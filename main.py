@@ -1,105 +1,117 @@
 import asyncio
+import random
+import string
+
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import (
+    Message, ReplyKeyboardMarkup, KeyboardButton,
+    InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+)
 from aiogram.filters import Command
-from aiogram.enums import ContentType
 
 TOKEN = "8657143749:AAEIPYqLeYTAWdJE26by9JPaELVHIY4fF6M"
+
+GROUP_ID = -1003421192077
+PRIVATE_LINK = "https://t.me/+O9tLSO8g5MsyYThi"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# ID
-ADMIN_ID = 8250753514
-GROUP_ID = -1003421192077
+# Хранилище кодов (user_id: code)
+codes = {}
 
-# Кнопки
+# --- генерация кода ---
+def generate_code():
+    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+
+# --- клавиатура ---
 kb = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="💳 Оплата")],
+        [KeyboardButton(text="💳 Оплата картой"), KeyboardButton(text="💰 Оплата криптой")],
         [KeyboardButton(text="✅ Я оплатил")]
     ],
     resize_keyboard=True
 )
 
-# Старт
+# --- старт ---
 @dp.message(Command("start"))
 async def start(message: Message):
+    await message.answer("Выберите способ оплаты:", reply_markup=kb)
+
+# --- оплата ---
+@dp.message(F.text.in_(["💳 Оплата картой", "💰 Оплата криптой"]))
+async def payment(message: Message):
+    code = generate_code()
+    codes[message.from_user.id] = code
+
     await message.answer(
-        "Выберите действие:",
+        f"💸 Оплатите и ОБЯЗАТЕЛЬНО укажите код в комментарии:\n\n"
+        f"👉 {code}\n\n"
+        f"После оплаты нажмите 'Я оплатил'"
+    )
+
+# --- я оплатил ---
+@dp.message(F.text == "✅ Я оплатил")
+async def paid(message: Message):
+    await message.answer("📸 Пришлите скрин оплаты С ВИДНЫМ КОДОМ")
+
+# --- обработка скрина ---
+@dp.message(F.photo)
+async def screenshot(message: Message):
+    user = message.from_user
+    code = codes.get(user.id)
+
+    text = (message.caption or "").upper()
+
+    if code and code in text:
+        status = "✅ КОД НАЙДЕН"
+    else:
+        status = "❌ КОД НЕ НАЙДЕН (ВОЗМОЖЕН ФЕЙК)"
+
+    caption = (
+        f"{status}\n\n"
+        f"👤 @{user.username}\n"
+        f"🆔 {user.id}\n"
+        f"🔑 Код: {code}"
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="✅ Принять", callback_data=f"accept_{user.id}"),
+            InlineKeyboardButton(text="❌ Отклонить", callback_data=f"decline_{user.id}")
+        ]
+    ])
+
+    await bot.send_photo(
+        GROUP_ID,
+        photo=message.photo[-1].file_id,
+        caption=caption,
         reply_markup=kb
     )
 
-# Оплата
-@dp.message(F.text == "💳 Оплата")
-async def pay(message: Message):
-    await message.answer(
-        "💸 Оплата криптой:\n"
-        "https://t.me/send?start=IVWM9jtSGhiL\n\n"
-        "После оплаты нажмите '✅ Я оплатил'"
-    )
+    await message.answer("⏳ Ваша оплата отправлена на проверку")
 
-# Нажал "Я оплатил"
-@dp.message(F.text == "✅ Я оплатил")
-async def paid(message: Message):
-    await message.answer("📸 Пришлите скриншот оплаты")
-
-# Приём СКРИНА (ФОТО)
-@dp.message(F.photo)
-async def screenshot(message: Message):
-    user_id = message.from_user.id
-    username = message.from_user.username
-
-    caption = f"💸 Новая оплата!\nID: {user_id}\n@{username}"
-
-    # Отправка в группу
-    await bot.send_photo(
-        chat_id=GROUP_ID,
-        photo=message.photo[-1].file_id,
-        caption=caption
-    )
-
-    await message.answer("⏳ Ваша оплата на рассмотрении, ожидайте 24 часа")
-
-# Команда админа (ответ на сообщение)
-@dp.message(Command("accept"))
-async def accept(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    if not message.reply_to_message:
-        await message.answer("Ответь на сообщение со скрином")
-        return
-
-    text = message.reply_to_message.caption
-
-    if not text:
-        return
-
-    # достаём ID
-    user_id = int(text.split("ID: ")[1].split("\n")[0])
+# --- принять ---
+@dp.callback_query(F.data.startswith("accept_"))
+async def accept(callback: CallbackQuery):
+    user_id = int(callback.data.split("_")[1])
 
     await bot.send_message(
         user_id,
-        "✅ Ваша оплата рассмотрена!\n\n"
-        "Ссылка на приват:\n"
-        "https://t.me/+O9tLSO8g5MsyYThi\n\n"
-        "Нажмите кнопку ниже"
+        f"✅ Оплата подтверждена\n\n🔗 {PRIVATE_LINK}"
     )
 
-    kb2 = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📩 Я отправил заявку")]],
-        resize_keyboard=True
-    )
+    await callback.answer("Принято")
 
-    await bot.send_message(user_id, "После подачи нажмите:", reply_markup=kb2)
+# --- отклонить ---
+@dp.callback_query(F.data.startswith("decline_"))
+async def decline(callback: CallbackQuery):
+    user_id = int(callback.data.split("_")[1])
 
-# Кнопка "Я отправил заявку"
-@dp.message(F.text == "📩 Я отправил заявку")
-async def done(message: Message):
-    await message.answer("⏳ Ожидайте подтверждения в течение 24 часов")
+    await bot.send_message(user_id, "❌ Оплата отклонена")
+    await callback.answer("Отклонено")
 
-# Запуск
+# --- запуск ---
 async def main():
     await dp.start_polling(bot)
 
