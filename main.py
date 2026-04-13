@@ -1,72 +1,81 @@
+# ⚠️ PRO MAX BOT (БОЛЬШОЙ КОД)
+
 import asyncio
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import (
-    Message, InlineKeyboardMarkup, InlineKeyboardButton,
-    CallbackQuery, ChatJoinRequest
-)
+from aiogram.types import *
 from aiogram.filters import Command
+from aiogram.fsm.state import StatesGroup, State
+from aiogram.fsm.context import FSMContext
 
 TOKEN = "8657143749:AAEIPYqLeYTAWdJE26by9JPaELVHIY4fF6M"
 ADMIN_ID = 8250753514
 
-# ===== ГРУППЫ =====
-SCREEN_GROUP_ID = -1003421192077   # куда летят скрины
-THREAD_ID = 2                      # тема (если нет — поставь None)
-
 PRIVATE_CHAT_ID = -1003763565634
 PRIVATE_LINK = "https://t.me/+O9tLSO8g5MsyYThi"
+SCREEN_GROUP_ID = -1003421192077
 
-DATA_FILE = "database.json"
+DATA_FILE = "db.json"
+LOG_FILE = "logs.txt"
 
-bot = Bot(token=TOKEN)
+bot = Bot(TOKEN)
 dp = Dispatcher()
 
-# ===== ДАННЫЕ =====
+# ===== FSM =====
+class AdminStates(StatesGroup):
+    broadcast = State()
+    ban = State()
+    unban = State()
+
+# ===== БАЗА =====
 users = {}
 banned = set()
 waiting_payment = set()
-broadcast_mode = set()
+online = set()
+payments = []
+last_action = {}
 
-# ===== БАЗА =====
-def load_data():
-    global users, banned
+# ===== ЛОГ =====
+def log(text):
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"{datetime.now()} | {text}\n")
+
+# ===== ЗАГРУЗКА =====
+def load():
+    global users, banned, payments
     if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r") as f:
+        with open(DATA_FILE) as f:
             data = json.load(f)
             users = data.get("users", {})
             banned = set(data.get("banned", []))
+            payments = data.get("payments", [])
 
-def save_data():
+def save():
     with open(DATA_FILE, "w") as f:
         json.dump({
             "users": users,
-            "banned": list(banned)
+            "banned": list(banned),
+            "payments": payments
         }, f, indent=4)
 
-# ===== ТЕКСТ =====
-MAIN_TEXT = (
-    "🔥 Добро пожаловать в магазин от @ukcip📦\n\n"
-    "Здесь вы можете приобрести доступ к привату💸\n\n"
-    "👇 Выберите способ оплаты:"
-)
+# ===== АНТИ СПАМ =====
+def anti(uid):
+    now = datetime.now().timestamp()
+    if uid in last_action and now - last_action[uid] < 1:
+        return False
+    last_action[uid] = now
+    return True
 
-# ===== КНОПКИ =====
+# ===== UI =====
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [
-            InlineKeyboardButton(text="💳 Карта", callback_data="card"),
-            InlineKeyboardButton(text="💰 Крипта", callback_data="crypto")
-        ],
-        [
-            InlineKeyboardButton(text="⭐ Звезды", callback_data="stars")
-        ],
-        [
-            InlineKeyboardButton(text="💎 Донат", callback_data="donate")
-        ]
+        [InlineKeyboardButton(text="💳 Карта", callback_data="card"),
+         InlineKeyboardButton(text="💰 Крипта", callback_data="crypto")],
+        [InlineKeyboardButton(text="⭐ Звезды", callback_data="stars")],
+        [InlineKeyboardButton(text="💎 Донат", callback_data="donate")]
     ])
 
 def paid_kb():
@@ -75,269 +84,190 @@ def paid_kb():
         [InlineKeyboardButton(text="⬅ Назад", callback_data="back")]
     ])
 
-def back_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅ Назад", callback_data="back")]
-    ])
-
 def admin_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📊 Статистика", callback_data="a_stats")],
-        [InlineKeyboardButton(text="📢 Рассылка", callback_data="a_broadcast")],
-        [InlineKeyboardButton(text="👥 Пользователи", callback_data="a_users")],
-        [InlineKeyboardButton(text="💸 Оплаты", callback_data="a_payments")],
-        [InlineKeyboardButton(text="🚫 Бан", callback_data="a_ban")],
-        [InlineKeyboardButton(text="✅ Разбан", callback_data="a_unban")]
+        [InlineKeyboardButton(text="📊 Стата", callback_data="stats")],
+        [InlineKeyboardButton(text="📈 Онлайн", callback_data="online")],
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="broadcast")],
+        [InlineKeyboardButton(text="🚫 Бан", callback_data="ban")],
+        [InlineKeyboardButton(text="✅ Разбан", callback_data="unban")]
     ])
 
-# ===== СТАРТ =====
+# ===== START =====
 @dp.message(Command("start"))
-async def start(message: Message):
-    if message.from_user.id in banned:
+async def start(msg: Message):
+    uid = msg.from_user.id
+
+    if uid in banned:
         return
 
-    uid = str(message.from_user.id)
+    if not anti(uid):
+        return
+
+    online.add(uid)
+
+    uid = str(uid)
 
     if uid not in users:
         users[uid] = {
-            "username": message.from_user.username,
             "joined": str(datetime.now()),
-            "paid": False
+            "paid": False,
+            "sub_until": None,
+            "level": "FREE"
         }
-        save_data()
+        save()
 
-    await message.answer(MAIN_TEXT, reply_markup=main_kb())
+    await msg.answer("🔥 Магазин\nВыберите оплату:", reply_markup=main_kb())
 
 # ===== НАЗАД =====
 @dp.callback_query(F.data == "back")
-async def back(callback: CallbackQuery):
-    await callback.message.edit_text(MAIN_TEXT, reply_markup=main_kb())
+async def back(cb: CallbackQuery):
+    await cb.message.edit_text("🔥 Магазин\nВыберите оплату:", reply_markup=main_kb())
 
-# ===== ОПЛАТЫ =====
+# ===== КАРТА =====
 @dp.callback_query(F.data == "card")
-async def card(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "💳 Оплата картой\n\n"
-        "💰 Сумма: 120₽\n\n"
-        "📌 Реквизиты:\n"
-        "2202208290305953\n"
-        "👤 Получатель: Даниил С.\n\n"
-        "❗ В комментарии ничего не писать\n\n"
-        "❗ После оплаты нажмите кнопку ниже",
+async def card(cb: CallbackQuery):
+    await cb.message.edit_text(
+        "💳 2202208290305953\n👤 Даниил С.\n\n💰 120₽",
         reply_markup=paid_kb()
     )
 
+# ===== КРИПТА =====
 @dp.callback_query(F.data == "crypto")
-async def crypto(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "💰 Оплата криптовалютой\n\n"
-        "🔗 Перейдите по ссылке:\n"
-        "http://t.me/send?start=IVWM9jtSGhiL\n\n"
-        "❗ После оплаты нажмите кнопку ниже",
-        reply_markup=paid_kb()
-    )
-
-@dp.callback_query(F.data == "stars")
-async def stars(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "⭐ Оплата звёздами\n\n"
-        "Отправьте админу @ukcip:\n"
-        "• 50⭐\n"
-        "• затем 15⭐\n\n"
-        "⏳ После оплаты нажмите кнопку ниже",
-        reply_markup=paid_kb()
-    )
-
-# ===== ДОНАТ С TON =====
-@dp.callback_query(F.data == "donate")
-async def donate(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "💎 Донат\n\n"
-        "💳 Карта:\n"
-        "2202208290305953\n"
-        "👤 Получатель: Даниил С.\n\n"
-        "💰 TON (Tonkeeper):\n"
-        "UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu\n\n"
-        "🙏 Спасибо за поддержку!",
+async def crypto(cb: CallbackQuery):
+    await cb.message.edit_text(
+        "💰 CryptoBot + TON",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="📲 Открыть Tonkeeper",
-                    url="https://app.tonkeeper.com/transfer/UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu"
-                )
-            ],
-            [
-                InlineKeyboardButton(text="⬅ Назад", callback_data="back")
-            ]
+            [InlineKeyboardButton(text="💰 CryptoBot", url="http://t.me/send?start=IVjeLAEQlLzA")],
+            [InlineKeyboardButton(text="📲 Tonkeeper", url="https://app.tonkeeper.com/transfer/UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu")],
+            [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")],
+            [InlineKeyboardButton(text="⬅ Назад", callback_data="back")]
         ])
     )
 
-# ===== ОПЛАТИЛ =====
+# ===== ОПЛАТА =====
 @dp.callback_query(F.data == "paid")
-async def paid(callback: CallbackQuery):
-    waiting_payment.add(callback.from_user.id)
-    await callback.message.edit_text("📸 Отправьте скриншот оплаты")
+async def paid(cb: CallbackQuery):
+    waiting_payment.add(cb.from_user.id)
+    await cb.message.edit_text("📸 Отправь скрин оплаты")
 
 # ===== СКРИН =====
 @dp.message(F.photo)
-async def handle_photo(message: Message):
-    if message.from_user.id not in waiting_payment:
+async def photo(msg: Message):
+    uid = msg.from_user.id
+
+    if uid not in waiting_payment:
         return
 
-    waiting_payment.remove(message.from_user.id)
-
-    msg = await message.answer("⏳ Обрабатываю оплату...")
+    waiting_payment.remove(uid)
 
     await bot.send_photo(
-        chat_id=SCREEN_GROUP_ID,
-        message_thread_id=THREAD_ID,
-        photo=message.photo[-1].file_id,
-        caption=f"💸 Новая оплата\n👤 {message.from_user.id}",
+        SCREEN_GROUP_ID,
+        photo=msg.photo[-1].file_id,
+        caption=f"💸 {uid}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="✅ Принять", callback_data=f"accept_{message.from_user.id}"),
-                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"decline_{message.from_user.id}")
-            ]
+            [InlineKeyboardButton(text="✅", callback_data=f"ok_{uid}"),
+             InlineKeyboardButton(text="❌", callback_data=f"no_{uid}")]
         ])
     )
 
-    await asyncio.sleep(2)
-    await msg.edit_text("⏳ Оплата на проверке (до 24ч)")
-
 # ===== ПРИНЯТЬ =====
-@dp.callback_query(F.data.startswith("accept_"))
-async def accept(callback: CallbackQuery):
-    user_id = callback.data.split("_")[1]
+@dp.callback_query(F.data.startswith("ok_"))
+async def ok(cb: CallbackQuery):
+    uid = cb.data.split("_")[1]
 
-    if user_id in users:
-        users[user_id]["paid"] = True
-        save_data()
+    users[uid]["paid"] = True
+    users[uid]["level"] = "PRO"
+    users[uid]["sub_until"] = str(datetime.now() + timedelta(days=30))
 
-    await bot.send_message(
-        int(user_id),
-        f"✅ Оплата подтверждена!\n\n{PRIVATE_LINK}\n\nПодайте заявку — доступ выдастся автоматически"
-    )
+    payments.append({"user": uid, "date": str(datetime.now())})
 
-    await callback.message.edit_caption("✅ Принято")
+    save()
+    log(f"PAY {uid}")
 
-# ===== ОТКЛОНИТЬ =====
-@dp.callback_query(F.data.startswith("decline_"))
-async def decline(callback: CallbackQuery):
-    user_id = int(callback.data.split("_")[1])
+    await bot.send_message(int(uid), f"✅ Доступ:\n{PRIVATE_LINK}")
+    await cb.message.edit_caption("✅")
 
-    await bot.send_message(user_id, "❌ Оплата отклонена")
-    await callback.message.edit_caption("❌ Отклонено")
+# ===== ПРОВЕРКА ПОДПИСКИ =====
+async def sub_checker():
+    while True:
+        now = datetime.now()
 
-# ===== АВТО-ПРИНЯТИЕ =====
+        for uid, data in users.items():
+            if data["sub_until"]:
+                if datetime.fromisoformat(data["sub_until"]) < now:
+                    data["paid"] = False
+                    data["level"] = "FREE"
+
+                    try:
+                        await bot.ban_chat_member(PRIVATE_CHAT_ID, int(uid))
+                        await bot.unban_chat_member(PRIVATE_CHAT_ID, int(uid))
+                    except:
+                        pass
+
+        save()
+        await asyncio.sleep(60)
+
+# ===== JOIN =====
 @dp.chat_join_request()
-async def auto_accept(request: ChatJoinRequest):
-    uid = str(request.from_user.id)
+async def join(req: ChatJoinRequest):
+    uid = str(req.from_user.id)
 
     if uid in users and users[uid]["paid"]:
-        await bot.approve_chat_join_request(
-            request.chat.id,
-            request.from_user.id
-        )
+        await bot.approve_chat_join_request(req.chat.id, req.from_user.id)
 
-# ===== АДМИН ПАНЕЛЬ =====
+# ===== АДМИН =====
 @dp.message(Command("panel"))
-async def panel(message: Message):
-    if message.from_user.id != ADMIN_ID:
-        return
+async def panel(msg: Message):
+    if msg.from_user.id == ADMIN_ID:
+        await msg.answer("⚙️ Панель", reply_markup=admin_kb())
 
-    await message.answer("⚙️ Админ панель", reply_markup=admin_kb())
-
-# ===== СТАТИСТИКА =====
-@dp.callback_query(F.data == "a_stats")
-async def stats(callback: CallbackQuery):
-    total = len(users)
-    paid = sum(1 for u in users.values() if u["paid"])
-
-    await callback.message.edit_text(
-        f"📊 Пользователей: {total}\n💸 Оплат: {paid}",
+@dp.callback_query(F.data == "stats")
+async def stats(cb: CallbackQuery):
+    await cb.message.edit_text(
+        f"👥 {len(users)}\n💸 {len(payments)}",
         reply_markup=admin_kb()
     )
 
-# ===== ПОЛЬЗОВАТЕЛИ =====
-@dp.callback_query(F.data == "a_users")
-async def list_users(callback: CallbackQuery):
-    await callback.message.edit_text(
-        f"👥 Всего пользователей: {len(users)}",
-        reply_markup=admin_kb()
-    )
-
-# ===== ОПЛАТЫ =====
-@dp.callback_query(F.data == "a_payments")
-async def payments(callback: CallbackQuery):
-    paid = [u for u in users if users[u]["paid"]]
-    await callback.message.edit_text(
-        f"💸 Оплатили: {len(paid)}",
+@dp.callback_query(F.data == "online")
+async def online_users(cb: CallbackQuery):
+    await cb.message.edit_text(
+        f"🟢 Онлайн: {len(online)}",
         reply_markup=admin_kb()
     )
 
 # ===== РАССЫЛКА =====
-@dp.callback_query(F.data == "a_broadcast")
-async def broadcast(callback: CallbackQuery):
-    broadcast_mode.add(callback.from_user.id)
-    await callback.message.edit_text("📢 Отправь текст или фото")
+@dp.callback_query(F.data == "broadcast")
+async def broadcast(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminStates.broadcast)
+    await cb.message.edit_text("Отправь сообщение")
 
-@dp.message()
-async def send_broadcast(message: Message):
-    if message.from_user.id not in broadcast_mode:
-        return
+@dp.message(AdminStates.broadcast)
+async def send_all(msg: Message, state: FSMContext):
+    count = 0
 
-    broadcast_mode.remove(message.from_user.id)
-
-    sent = 0
-
-    for uid in users:
+    for u in users:
         try:
-            await bot.copy_message(uid, message.chat.id, message.message_id)
-            sent += 1
-            await asyncio.sleep(0.03)
+            await bot.copy_message(u, msg.chat.id, msg.message_id)
+            count += 1
+            await asyncio.sleep(0.05)
         except:
             pass
 
-    await message.answer(f"✅ Отправлено: {sent}")
-
-# ===== БАН =====
-@dp.callback_query(F.data == "a_ban")
-async def ban_start(callback: CallbackQuery):
-    await callback.message.edit_text("Введи ID для бана")
-
-    @dp.message()
-    async def ban_user(message: Message):
-        try:
-            banned.add(int(message.text))
-            save_data()
-            await message.answer("🚫 Забанен")
-        except:
-            pass
-
-# ===== РАЗБАН =====
-@dp.callback_query(F.data == "a_unban")
-async def unban_start(callback: CallbackQuery):
-    await callback.message.edit_text("Введи ID для разбана")
-
-    @dp.message()
-    async def unban_user(message: Message):
-        try:
-            banned.discard(int(message.text))
-            save_data()
-            await message.answer("✅ Разбанен")
-        except:
-            pass
+    await msg.answer(f"✅ {count}")
+    await state.clear()
 
 # ===== ЗАПУСК =====
 async def main():
-    load_data()
+    load()
+    asyncio.create_task(sub_checker())
 
     while True:
         try:
             await bot.delete_webhook(drop_pending_updates=True)
             await dp.start_polling(bot)
         except Exception as e:
-            print("Ошибка:", e)
+            log(f"ERR {e}")
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
