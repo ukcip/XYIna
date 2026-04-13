@@ -130,14 +130,17 @@ async def card(cb: CallbackQuery):
         reply_markup=paid_kb()
     )
 
-# ===== КРИПТА (ТОЛЬКО CRYPTOBOT) =====
+# ===== КРИПТА (НОВАЯ ССЫЛКА) =====
 @dp.callback_query(F.data == "crypto")
 async def crypto(cb: CallbackQuery):
     await cb.message.edit_text(
         "💰 Оплата криптовалютой\n\n"
         "Нажмите кнопку ниже",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💰 CryptoBot", url="http://t.me/send?start=IVjeLAEQlLzA")],
+            [InlineKeyboardButton(
+                text="💰 CryptoBot",
+                url="http://t.me/send?start=IVWM9jtSGhiL"
+            )],
             [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")],
             [InlineKeyboardButton(text="⬅ Назад", callback_data="back")]
         ])
@@ -154,7 +157,7 @@ async def stars(cb: CallbackQuery):
         reply_markup=paid_kb()
     )
 
-# ===== ДОНАТ =====
+# ===== ДОНАТ (НЕ ТРОГАЛ) =====
 @dp.callback_query(F.data == "donate")
 async def donate(cb: CallbackQuery):
     await cb.message.edit_text(
