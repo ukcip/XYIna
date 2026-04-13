@@ -1,10 +1,13 @@
 import asyncio
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.types import *
+from aiogram.types import (
+    Message, InlineKeyboardMarkup, InlineKeyboardButton,
+    CallbackQuery, ChatJoinRequest
+)
 from aiogram.filters import Command
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.fsm.context import FSMContext
@@ -24,8 +27,6 @@ dp = Dispatcher()
 # ===== FSM =====
 class AdminStates(StatesGroup):
     broadcast = State()
-    ban = State()
-    unban = State()
 
 # ===== ДАННЫЕ =====
 users = {}
@@ -86,10 +87,7 @@ def paid_kb():
 def admin_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Стата", callback_data="stats")],
-        [InlineKeyboardButton(text="📈 Онлайн", callback_data="online")],
-        [InlineKeyboardButton(text="📢 Рассылка", callback_data="broadcast")],
-        [InlineKeyboardButton(text="🚫 Бан", callback_data="ban")],
-        [InlineKeyboardButton(text="✅ Разбан", callback_data="unban")]
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="broadcast")]
     ])
 
 # ===== START =====
@@ -156,7 +154,7 @@ async def stars(cb: CallbackQuery):
         reply_markup=paid_kb()
     )
 
-# ===== ДОНАТ (TON ТУТ) =====
+# ===== ДОНАТ =====
 @dp.callback_query(F.data == "donate")
 async def donate(cb: CallbackQuery):
     await cb.message.edit_text(
@@ -164,13 +162,13 @@ async def donate(cb: CallbackQuery):
         "💳 Карта:\n"
         "2202208290305953\n"
         "👤 Даниил С.\n\n"
-        "💰 TON (Tonkeeper):\n"
+        "💰 Крипта:\n"
+        "через CryptoBot\n\n"
+        "💎 TON:\n"
         "UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="📲 Открыть Tonkeeper",
-                url="https://app.tonkeeper.com/transfer/UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu"
-            )],
+            [InlineKeyboardButton(text="💰 CryptoBot", url="http://t.me/send?start=IVjeLAEQlLzA")],
+            [InlineKeyboardButton(text="📲 Tonkeeper", url="https://app.tonkeeper.com/transfer/UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu")],
             [InlineKeyboardButton(text="⬅ Назад", callback_data="back")]
         ])
     )
@@ -183,37 +181,73 @@ async def paid(cb: CallbackQuery):
 
 # ===== СКРИН =====
 @dp.message(F.photo)
-async def photo(msg: Message):
-    uid = msg.from_user.id
+async def handle_payment(message: Message):
+    uid = message.from_user.id
 
     if uid not in waiting_payment:
         return
 
     waiting_payment.remove(uid)
 
+    msg = await message.answer("⏳ Обрабатываю оплату...")
+
     await bot.send_photo(
         SCREEN_GROUP_ID,
-        photo=msg.photo[-1].file_id,
-        caption=f"💸 {uid}",
+        photo=message.photo[-1].file_id,
+        caption=f"💸 Новая заявка\n👤 {uid}",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅", callback_data=f"ok_{uid}"),
-             InlineKeyboardButton(text="❌", callback_data=f"no_{uid}")]
+            [
+                InlineKeyboardButton(text="✅ Принять", callback_data=f"ok_{uid}"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"no_{uid}")
+            ]
         ])
+    )
+
+    await asyncio.sleep(2)
+
+    await msg.edit_text(
+        "✅ Ваша заявка отправлена на рассмотрение\n\n"
+        "⏳ Ожидайте до 24 часов"
     )
 
 # ===== ПРИНЯТЬ =====
 @dp.callback_query(F.data.startswith("ok_"))
-async def ok(cb: CallbackQuery):
-    uid = cb.data.split("_")[1]
+async def accept(callback: CallbackQuery):
+    user_id = int(callback.data.split("_")[1])
+    uid = str(user_id)
 
-    users[uid]["paid"] = True
-    payments.append({"user": uid, "date": str(datetime.now())})
-    save()
+    if uid in users:
+        users[uid]["paid"] = True
+        payments.append({"user": uid, "date": str(datetime.now())})
+        save()
 
-    await bot.send_message(int(uid), f"✅ Доступ:\n{PRIVATE_LINK}")
-    await cb.message.edit_caption("✅ Принято")
+    try:
+        await bot.send_message(
+            user_id,
+            "✅ Оплата подтверждена!\n\n"
+            f"🔓 Доступ:\n{PRIVATE_LINK}"
+        )
+    except:
+        pass
 
-# ===== JOIN =====
+    await callback.message.edit_caption(f"✅ Принято\n👤 {user_id}")
+
+# ===== ОТКЛОНИТЬ =====
+@dp.callback_query(F.data.startswith("no_"))
+async def decline(callback: CallbackQuery):
+    user_id = int(callback.data.split("_")[1])
+
+    try:
+        await bot.send_message(
+            user_id,
+            "❌ Оплата отклонена\n\nОтправьте корректный скрин"
+        )
+    except:
+        pass
+
+    await callback.message.edit_caption(f"❌ Отклонено\n👤 {user_id}")
+
+# ===== АВТО-ПРИНЯТИЕ =====
 @dp.chat_join_request()
 async def join(req: ChatJoinRequest):
     uid = str(req.from_user.id)
@@ -233,13 +267,6 @@ async def stats(cb: CallbackQuery):
         reply_markup=admin_kb()
     )
 
-@dp.callback_query(F.data == "online")
-async def online_users(cb: CallbackQuery):
-    await cb.message.edit_text(
-        f"🟢 Онлайн: {len(online)}",
-        reply_markup=admin_kb()
-    )
-
 # ===== РАССЫЛКА =====
 @dp.callback_query(F.data == "broadcast")
 async def broadcast(cb: CallbackQuery, state: FSMContext):
@@ -249,7 +276,6 @@ async def broadcast(cb: CallbackQuery, state: FSMContext):
 @dp.message(AdminStates.broadcast)
 async def send_all(msg: Message, state: FSMContext):
     count = 0
-
     for u in users:
         try:
             await bot.copy_message(u, msg.chat.id, msg.message_id)
