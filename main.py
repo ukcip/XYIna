@@ -8,6 +8,7 @@ from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 )
 from aiogram.filters import Command
+from aiogram.exceptions import TelegramRetryAfter
 
 TOKEN = "8657143749:AAEIPYqLeYTAWdJE26by9JPaELVHIY4fF6M"
 
@@ -17,14 +18,21 @@ PRIVATE_LINK = "https://t.me/+O9tLSO8g5MsyYThi"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Хранилище кодов (user_id: code)
+# ===== АНТИ-ФЛУД ФУНКЦИЯ =====
+async def safe_send(func, *args, **kwargs):
+    try:
+        return await func(*args, **kwargs)
+    except TelegramRetryAfter as e:
+        await asyncio.sleep(e.retry_after)
+        return await func(*args, **kwargs)
+
+# ===== ХРАНЕНИЕ КОДОВ =====
 codes = {}
 
-# --- генерация кода ---
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# --- клавиатура ---
+# ===== КНОПКИ =====
 kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="💳 Оплата картой"), KeyboardButton(text="💰 Оплата криптой")],
@@ -33,29 +41,28 @@ kb = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# --- старт ---
+# ===== СТАРТ =====
 @dp.message(Command("start"))
 async def start(message: Message):
-    await message.answer("Выберите способ оплаты:", reply_markup=kb)
+    await safe_send(message.answer, "Выберите способ оплаты:", reply_markup=kb)
 
-# --- оплата ---
+# ===== ОПЛАТА =====
 @dp.message(F.text.in_(["💳 Оплата картой", "💰 Оплата криптой"]))
 async def payment(message: Message):
     code = generate_code()
     codes[message.from_user.id] = code
 
-    await message.answer(
-        f"💸 Оплатите и ОБЯЗАТЕЛЬНО укажите код в комментарии:\n\n"
-        f"👉 {code}\n\n"
-        f"После оплаты нажмите 'Я оплатил'"
+    await safe_send(
+        message.answer,
+        f"💸 Оплатите и укажите код в комментарии:\n\n👉 {code}\n\nПосле оплаты нажмите 'Я оплатил'"
     )
 
-# --- я оплатил ---
+# ===== Я ОПЛАТИЛ =====
 @dp.message(F.text == "✅ Я оплатил")
 async def paid(message: Message):
-    await message.answer("📸 Пришлите скрин оплаты С ВИДНЫМ КОДОМ")
+    await safe_send(message.answer, "📸 Пришлите скрин оплаты С ВИДНЫМ КОДОМ")
 
-# --- обработка скрина ---
+# ===== СКРИН =====
 @dp.message(F.photo)
 async def screenshot(message: Message):
     user = message.from_user
@@ -75,43 +82,50 @@ async def screenshot(message: Message):
         f"🔑 Код: {code}"
     )
 
-    kb = InlineKeyboardMarkup(inline_keyboard=[
+    kb_inline = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="✅ Принять", callback_data=f"accept_{user.id}"),
             InlineKeyboardButton(text="❌ Отклонить", callback_data=f"decline_{user.id}")
         ]
     ])
 
-    await bot.send_photo(
+    await safe_send(
+        bot.send_photo,
         GROUP_ID,
-        photo=message.photo[-1].file_id,
+        message.photo[-1].file_id,
         caption=caption,
-        reply_markup=kb
+        reply_markup=kb_inline
     )
 
-    await message.answer("⏳ Ваша оплата отправлена на проверку")
+    await safe_send(message.answer, "⏳ Ваша оплата отправлена на проверку")
 
-# --- принять ---
+# ===== ПРИНЯТЬ =====
 @dp.callback_query(F.data.startswith("accept_"))
 async def accept(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[1])
 
-    await bot.send_message(
+    await safe_send(
+        bot.send_message,
         user_id,
-        f"✅ Оплата подтверждена\n\n🔗 {PRIVATE_LINK}"
+        f"✅ Оплата подтверждена!\n\n🔗 {PRIVATE_LINK}"
     )
 
     await callback.answer("Принято")
 
-# --- отклонить ---
+# ===== ОТКЛОНИТЬ =====
 @dp.callback_query(F.data.startswith("decline_"))
 async def decline(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[1])
 
-    await bot.send_message(user_id, "❌ Оплата отклонена")
+    await safe_send(
+        bot.send_message,
+        user_id,
+        "❌ Оплата отклонена"
+    )
+
     await callback.answer("Отклонено")
 
-# --- запуск ---
+# ===== ЗАПУСК =====
 async def main():
     await dp.start_polling(bot)
 
