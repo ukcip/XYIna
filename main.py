@@ -27,6 +27,8 @@ dp = Dispatcher()
 # ===== FSM =====
 class AdminStates(StatesGroup):
     broadcast = State()
+    ban = State()
+    unban = State()
 
 # ===== ДАННЫЕ =====
 users = {}
@@ -87,13 +89,15 @@ def paid_kb():
 def admin_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Стата", callback_data="stats")],
-        [InlineKeyboardButton(text="📢 Рассылка", callback_data="broadcast")]
+        [InlineKeyboardButton(text="📢 Рассылка", callback_data="broadcast")],
+        [InlineKeyboardButton(text="🚫 Бан", callback_data="ban")],
+        [InlineKeyboardButton(text="✅ Разбан", callback_data="unban")]
     ])
 
 # ===== START =====
 @dp.message(Command("start"))
 async def start(msg: Message):
-    uid = msg.from_user.id
+    uid = str(msg.from_user.id)
 
     if uid in banned:
         return
@@ -102,8 +106,6 @@ async def start(msg: Message):
         return
 
     online.add(uid)
-
-    uid = str(uid)
 
     if uid not in users:
         users[uid] = {
@@ -117,30 +119,36 @@ async def start(msg: Message):
 # ===== BACK =====
 @dp.callback_query(F.data == "back")
 async def back(cb: CallbackQuery):
+    if str(cb.from_user.id) in banned:
+        return
     await cb.message.edit_text(MAIN_TEXT, reply_markup=main_kb())
 
 # ===== КАРТА =====
 @dp.callback_query(F.data == "card")
 async def card(cb: CallbackQuery):
+    if str(cb.from_user.id) in banned:
+        return
+
     await cb.message.edit_text(
         "💳 Оплата картой\n\n"
+        "💰 120₽\n"
         "2202208290305953\n"
         "👤 Даниил С.\n\n"
         "❗ После оплаты нажмите кнопку ниже",
         reply_markup=paid_kb()
     )
 
-# ===== КРИПТА (НОВАЯ ССЫЛКА) =====
+# ===== КРИПТА =====
 @dp.callback_query(F.data == "crypto")
 async def crypto(cb: CallbackQuery):
+    if str(cb.from_user.id) in banned:
+        return
+
     await cb.message.edit_text(
         "💰 Оплата криптовалютой\n\n"
         "Нажмите кнопку ниже",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(
-                text="💰 CryptoBot",
-                url="http://t.me/send?start=IVWM9jtSGhiL"
-            )],
+            [InlineKeyboardButton(text="💰 CryptoBot", url="http://t.me/send?start=IVWM9jtSGhiL")],
             [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")],
             [InlineKeyboardButton(text="⬅ Назад", callback_data="back")]
         ])
@@ -149,6 +157,9 @@ async def crypto(cb: CallbackQuery):
 # ===== ЗВЕЗДЫ =====
 @dp.callback_query(F.data == "stars")
 async def stars(cb: CallbackQuery):
+    if str(cb.from_user.id) in banned:
+        return
+
     await cb.message.edit_text(
         "⭐ Оплата звездами\n\n"
         "Отправьте админу @ukcip:\n"
@@ -157,18 +168,17 @@ async def stars(cb: CallbackQuery):
         reply_markup=paid_kb()
     )
 
-# ===== ДОНАТ (НЕ ТРОГАЛ) =====
+# ===== ДОНАТ =====
 @dp.callback_query(F.data == "donate")
 async def donate(cb: CallbackQuery):
+    if str(cb.from_user.id) in banned:
+        return
+
     await cb.message.edit_text(
         "💎 Донат\n\n"
-        "💳 Карта:\n"
-        "2202208290305953\n"
-        "👤 Даниил С.\n\n"
-        "💰 Крипта:\n"
-        "через CryptoBot\n\n"
-        "💎 TON:\n"
-        "UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu",
+        "💳 Карта:\n2202208290305953\n👤 Даниил С.\n\n"
+        "💰 Крипта: через CryptoBot\n\n"
+        "💎 TON:\nUQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💰 CryptoBot", url="http://t.me/send?start=IVjeLAEQlLzA")],
             [InlineKeyboardButton(text="📲 Tonkeeper", url="https://app.tonkeeper.com/transfer/UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu")],
@@ -179,6 +189,9 @@ async def donate(cb: CallbackQuery):
 # ===== Я ОПЛАТИЛ =====
 @dp.callback_query(F.data == "paid")
 async def paid(cb: CallbackQuery):
+    if str(cb.from_user.id) in banned:
+        return
+
     waiting_payment.add(cb.from_user.id)
     await cb.message.edit_text("📸 Отправьте скрин оплаты")
 
@@ -186,6 +199,9 @@ async def paid(cb: CallbackQuery):
 @dp.message(F.photo)
 async def handle_payment(message: Message):
     uid = message.from_user.id
+
+    if str(uid) in banned:
+        return
 
     if uid not in waiting_payment:
         return
@@ -263,10 +279,11 @@ async def panel(msg: Message):
     if msg.from_user.id == ADMIN_ID:
         await msg.answer("⚙️ Панель", reply_markup=admin_kb())
 
+# ===== СТАТА =====
 @dp.callback_query(F.data == "stats")
 async def stats(cb: CallbackQuery):
     await cb.message.edit_text(
-        f"👥 Пользователей: {len(users)}\n💸 Оплат: {len(payments)}",
+        f"👥 Пользователей: {len(users)}\n💸 Оплат: {len(payments)}\n🚫 Банов: {len(banned)}",
         reply_markup=admin_kb()
     )
 
@@ -288,6 +305,34 @@ async def send_all(msg: Message, state: FSMContext):
             pass
 
     await msg.answer(f"✅ Отправлено: {count}")
+    await state.clear()
+
+# ===== БАН =====
+@dp.callback_query(F.data == "ban")
+async def ban_start(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminStates.ban)
+    await cb.message.edit_text("Введите ID для бана")
+
+@dp.message(AdminStates.ban)
+async def ban_user(msg: Message, state: FSMContext):
+    uid = msg.text
+    banned.add(uid)
+    save()
+    await msg.answer(f"🚫 Забанен {uid}")
+    await state.clear()
+
+# ===== РАЗБАН =====
+@dp.callback_query(F.data == "unban")
+async def unban_start(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminStates.unban)
+    await cb.message.edit_text("Введите ID для разбана")
+
+@dp.message(AdminStates.unban)
+async def unban_user(msg: Message, state: FSMContext):
+    uid = msg.text
+    banned.discard(uid)
+    save()
+    await msg.answer(f"✅ Разбанен {uid}")
     await state.clear()
 
 # ===== ЗАПУСК =====
