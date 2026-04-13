@@ -1,10 +1,8 @@
 import asyncio
-import random
-import string
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
-    CallbackQuery
+    CallbackQuery, ChatJoinRequest
 )
 from aiogram.filters import Command
 
@@ -67,7 +65,7 @@ async def back(callback: CallbackQuery):
         reply_markup=main_kb()
     )
 
-# ===== КАРТА =====
+# ===== ОПЛАТЫ =====
 @dp.callback_query(F.data == "card")
 async def card(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -78,7 +76,6 @@ async def card(callback: CallbackQuery):
         reply_markup=paid_kb()
     )
 
-# ===== КРИПТА =====
 @dp.callback_query(F.data == "crypto")
 async def crypto(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -88,7 +85,6 @@ async def crypto(callback: CallbackQuery):
         reply_markup=paid_kb()
     )
 
-# ===== ЗВЕЗДЫ =====
 @dp.callback_query(F.data == "stars")
 async def stars(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -99,7 +95,6 @@ async def stars(callback: CallbackQuery):
         reply_markup=paid_kb()
     )
 
-# ===== ДОНАТ =====
 @dp.callback_query(F.data == "donate")
 async def donate(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -163,27 +158,36 @@ async def handle_photo(message: Message):
         await msg.edit_text("❌ Ошибка отправки")
         print("ERROR:", e)
 
+# ===== АВТО-ПРИНЯТИЕ ЗАЯВОК =====
+@dp.chat_join_request()
+async def auto_accept(request: ChatJoinRequest):
+    try:
+        await bot.approve_chat_join_request(
+            chat_id=request.chat.id,
+            user_id=request.from_user.id
+        )
+
+        await bot.send_message(
+            request.from_user.id,
+            "✅ Заявка одобрена! Добро пожаловать 🎉"
+        )
+
+    except Exception as e:
+        print("AUTO ACCEPT ERROR:", e)
+
 # ===== ПРИНЯТЬ =====
 @dp.callback_query(F.data.startswith("accept_"))
 async def accept(callback: CallbackQuery):
     user_id = int(callback.data.split("_")[1])
 
-    try:
-        await bot.approve_chat_join_request(
-            chat_id=PRIVATE_CHAT_ID,
-            user_id=user_id
-        )
-        status = "✅ Заявка одобрена"
-    except:
-        status = "⚠️ Нет заявки"
-
     await bot.send_message(
         user_id,
         f"✅ Оплата подтверждена!\n\n"
-        f"🔗 {PRIVATE_LINK}"
+        f"🔗 {PRIVATE_LINK}\n\n"
+        f"Подайте заявку — она будет принята автоматически"
     )
 
-    await callback.message.edit_caption(f"✅ Принято\n\n{status}")
+    await callback.message.edit_caption("✅ Принято")
 
 # ===== ОТКЛОНИТЬ =====
 @dp.callback_query(F.data.startswith("decline_"))
@@ -193,9 +197,19 @@ async def decline(callback: CallbackQuery):
     await bot.send_message(user_id, "❌ Оплата отклонена")
     await callback.message.edit_caption("❌ Отклонено")
 
-# ===== ЗАПУСК =====
+# ===== АВТОРЕСТАРТ =====
 async def main():
-    await dp.start_polling(bot)
+    while True:
+        try:
+            print("🚀 Бот запущен")
+
+            await bot.delete_webhook(drop_pending_updates=True)
+            await dp.start_polling(bot)
+
+        except Exception as e:
+            print("❌ Бот упал:", e)
+            print("🔁 Перезапуск через 5 секунд...")
+            await asyncio.sleep(5)
 
 if __name__ == "__main__":
     asyncio.run(main())
