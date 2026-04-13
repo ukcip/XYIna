@@ -14,8 +14,8 @@ TOKEN = "8657143749:AAEIPYqLeYTAWdJE26by9JPaELVHIY4fF6M"
 ADMIN_ID = 8250753514
 
 # ===== ГРУППЫ =====
-SCREEN_GROUP_ID = -1003421192077
-THREAD_ID = 2
+SCREEN_GROUP_ID = -1003421192077   # куда летят скрины
+THREAD_ID = 2                      # тема (если нет — поставь None)
 
 PRIVATE_CHAT_ID = -1003763565634
 PRIVATE_LINK = "https://t.me/+O9tLSO8g5MsyYThi"
@@ -118,9 +118,11 @@ async def back(callback: CallbackQuery):
 async def card(callback: CallbackQuery):
     await callback.message.edit_text(
         "💳 Оплата картой\n\n"
-        "💰 Сумма: 120₽\n"
+        "💰 Сумма: 120₽\n\n"
         "📌 Реквизиты:\n"
-        "2202208290305953\n\n"
+        "2202208290305953\n"
+        "👤 Получатель: Даниил С.\n\n"
+        "❗ В комментарии ничего не писать\n\n"
         "❗ После оплаты нажмите кнопку ниже",
         reply_markup=paid_kb()
     )
@@ -146,15 +148,28 @@ async def stars(callback: CallbackQuery):
         reply_markup=paid_kb()
     )
 
+# ===== ДОНАТ С TON =====
 @dp.callback_query(F.data == "donate")
 async def donate(callback: CallbackQuery):
     await callback.message.edit_text(
         "💎 Донат\n\n"
         "💳 Карта:\n"
-        "2202208290305953\n\n"
-        "💰 Крипта:\n"
-        "http://t.me/send?start=IVjeLAEQlLzA",
-        reply_markup=back_kb()
+        "2202208290305953\n"
+        "👤 Получатель: Даниил С.\n\n"
+        "💰 TON (Tonkeeper):\n"
+        "UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu\n\n"
+        "🙏 Спасибо за поддержку!",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📲 Открыть Tonkeeper",
+                    url="https://app.tonkeeper.com/transfer/UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu"
+                )
+            ],
+            [
+                InlineKeyboardButton(text="⬅ Назад", callback_data="back")
+            ]
+        ])
     )
 
 # ===== ОПЛАТИЛ =====
@@ -200,7 +215,7 @@ async def accept(callback: CallbackQuery):
 
     await bot.send_message(
         int(user_id),
-        f"✅ Оплата подтверждена!\n\n{PRIVATE_LINK}\n\nПодайте заявку"
+        f"✅ Оплата подтверждена!\n\n{PRIVATE_LINK}\n\nПодайте заявку — доступ выдастся автоматически"
     )
 
     await callback.message.edit_caption("✅ Принято")
@@ -243,7 +258,7 @@ async def stats(callback: CallbackQuery):
         reply_markup=admin_kb()
     )
 
-# ===== СПИСОК =====
+# ===== ПОЛЬЗОВАТЕЛИ =====
 @dp.callback_query(F.data == "a_users")
 async def list_users(callback: CallbackQuery):
     await callback.message.edit_text(
@@ -288,7 +303,7 @@ async def send_broadcast(message: Message):
 # ===== БАН =====
 @dp.callback_query(F.data == "a_ban")
 async def ban_start(callback: CallbackQuery):
-    await callback.message.edit_text("Введи ID пользователя для бана")
+    await callback.message.edit_text("Введи ID для бана")
 
     @dp.message()
     async def ban_user(message: Message):
