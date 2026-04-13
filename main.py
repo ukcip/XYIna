@@ -1,5 +1,3 @@
-# ⚠️ PRO MAX BOT (БОЛЬШОЙ КОД)
-
 import asyncio
 import json
 import os
@@ -19,7 +17,6 @@ PRIVATE_LINK = "https://t.me/+O9tLSO8g5MsyYThi"
 SCREEN_GROUP_ID = -1003421192077
 
 DATA_FILE = "db.json"
-LOG_FILE = "logs.txt"
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
@@ -30,7 +27,7 @@ class AdminStates(StatesGroup):
     ban = State()
     unban = State()
 
-# ===== БАЗА =====
+# ===== ДАННЫЕ =====
 users = {}
 banned = set()
 waiting_payment = set()
@@ -38,12 +35,7 @@ online = set()
 payments = []
 last_action = {}
 
-# ===== ЛОГ =====
-def log(text):
-    with open(LOG_FILE, "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now()} | {text}\n")
-
-# ===== ЗАГРУЗКА =====
+# ===== БАЗА =====
 def load():
     global users, banned, payments
     if os.path.exists(DATA_FILE):
@@ -61,7 +53,7 @@ def save():
             "payments": payments
         }, f, indent=4)
 
-# ===== АНТИ СПАМ =====
+# ===== АНТИСПАМ =====
 def anti(uid):
     now = datetime.now().timestamp()
     if uid in last_action and now - last_action[uid] < 1:
@@ -69,7 +61,14 @@ def anti(uid):
     last_action[uid] = now
     return True
 
-# ===== UI =====
+# ===== ТЕКСТ =====
+MAIN_TEXT = (
+    "🔥 Добро пожаловать в магазин от @ukcip📦\n\n"
+    "Здесь вы можете приобрести доступ к привату💸\n\n"
+    "👇 Выберите способ оплаты:"
+)
+
+# ===== КНОПКИ =====
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="💳 Карта", callback_data="card"),
@@ -111,45 +110,76 @@ async def start(msg: Message):
     if uid not in users:
         users[uid] = {
             "joined": str(datetime.now()),
-            "paid": False,
-            "sub_until": None,
-            "level": "FREE"
+            "paid": False
         }
         save()
 
-    await msg.answer("🔥 Магазин\nВыберите оплату:", reply_markup=main_kb())
+    await msg.answer(MAIN_TEXT, reply_markup=main_kb())
 
-# ===== НАЗАД =====
+# ===== BACK =====
 @dp.callback_query(F.data == "back")
 async def back(cb: CallbackQuery):
-    await cb.message.edit_text("🔥 Магазин\nВыберите оплату:", reply_markup=main_kb())
+    await cb.message.edit_text(MAIN_TEXT, reply_markup=main_kb())
 
 # ===== КАРТА =====
 @dp.callback_query(F.data == "card")
 async def card(cb: CallbackQuery):
     await cb.message.edit_text(
-        "💳 2202208290305953\n👤 Даниил С.\n\n💰 120₽",
+        "💳 Оплата картой\n\n"
+        "2202208290305953\n"
+        "👤 Даниил С.\n\n"
+        "❗ После оплаты нажмите кнопку ниже",
         reply_markup=paid_kb()
     )
 
-# ===== КРИПТА =====
+# ===== КРИПТА (ТОЛЬКО CRYPTOBOT) =====
 @dp.callback_query(F.data == "crypto")
 async def crypto(cb: CallbackQuery):
     await cb.message.edit_text(
-        "💰 CryptoBot + TON",
+        "💰 Оплата криптовалютой\n\n"
+        "Нажмите кнопку ниже",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="💰 CryptoBot", url="http://t.me/send?start=IVjeLAEQlLzA")],
-            [InlineKeyboardButton(text="📲 Tonkeeper", url="https://app.tonkeeper.com/transfer/UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu")],
             [InlineKeyboardButton(text="✅ Я оплатил", callback_data="paid")],
             [InlineKeyboardButton(text="⬅ Назад", callback_data="back")]
         ])
     )
 
-# ===== ОПЛАТА =====
+# ===== ЗВЕЗДЫ =====
+@dp.callback_query(F.data == "stars")
+async def stars(cb: CallbackQuery):
+    await cb.message.edit_text(
+        "⭐ Оплата звездами\n\n"
+        "Отправьте админу @ukcip:\n"
+        "50⭐ + 15⭐\n\n"
+        "После оплаты нажмите кнопку ниже",
+        reply_markup=paid_kb()
+    )
+
+# ===== ДОНАТ (TON ТУТ) =====
+@dp.callback_query(F.data == "donate")
+async def donate(cb: CallbackQuery):
+    await cb.message.edit_text(
+        "💎 Донат\n\n"
+        "💳 Карта:\n"
+        "2202208290305953\n"
+        "👤 Даниил С.\n\n"
+        "💰 TON (Tonkeeper):\n"
+        "UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text="📲 Открыть Tonkeeper",
+                url="https://app.tonkeeper.com/transfer/UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu"
+            )],
+            [InlineKeyboardButton(text="⬅ Назад", callback_data="back")]
+        ])
+    )
+
+# ===== Я ОПЛАТИЛ =====
 @dp.callback_query(F.data == "paid")
 async def paid(cb: CallbackQuery):
     waiting_payment.add(cb.from_user.id)
-    await cb.message.edit_text("📸 Отправь скрин оплаты")
+    await cb.message.edit_text("📸 Отправьте скрин оплаты")
 
 # ===== СКРИН =====
 @dp.message(F.photo)
@@ -177,42 +207,16 @@ async def ok(cb: CallbackQuery):
     uid = cb.data.split("_")[1]
 
     users[uid]["paid"] = True
-    users[uid]["level"] = "PRO"
-    users[uid]["sub_until"] = str(datetime.now() + timedelta(days=30))
-
     payments.append({"user": uid, "date": str(datetime.now())})
-
     save()
-    log(f"PAY {uid}")
 
     await bot.send_message(int(uid), f"✅ Доступ:\n{PRIVATE_LINK}")
-    await cb.message.edit_caption("✅")
-
-# ===== ПРОВЕРКА ПОДПИСКИ =====
-async def sub_checker():
-    while True:
-        now = datetime.now()
-
-        for uid, data in users.items():
-            if data["sub_until"]:
-                if datetime.fromisoformat(data["sub_until"]) < now:
-                    data["paid"] = False
-                    data["level"] = "FREE"
-
-                    try:
-                        await bot.ban_chat_member(PRIVATE_CHAT_ID, int(uid))
-                        await bot.unban_chat_member(PRIVATE_CHAT_ID, int(uid))
-                    except:
-                        pass
-
-        save()
-        await asyncio.sleep(60)
+    await cb.message.edit_caption("✅ Принято")
 
 # ===== JOIN =====
 @dp.chat_join_request()
 async def join(req: ChatJoinRequest):
     uid = str(req.from_user.id)
-
     if uid in users and users[uid]["paid"]:
         await bot.approve_chat_join_request(req.chat.id, req.from_user.id)
 
@@ -225,7 +229,7 @@ async def panel(msg: Message):
 @dp.callback_query(F.data == "stats")
 async def stats(cb: CallbackQuery):
     await cb.message.edit_text(
-        f"👥 {len(users)}\n💸 {len(payments)}",
+        f"👥 Пользователей: {len(users)}\n💸 Оплат: {len(payments)}",
         reply_markup=admin_kb()
     )
 
@@ -254,20 +258,18 @@ async def send_all(msg: Message, state: FSMContext):
         except:
             pass
 
-    await msg.answer(f"✅ {count}")
+    await msg.answer(f"✅ Отправлено: {count}")
     await state.clear()
 
 # ===== ЗАПУСК =====
 async def main():
     load()
-    asyncio.create_task(sub_checker())
 
     while True:
         try:
             await bot.delete_webhook(drop_pending_updates=True)
             await dp.start_polling(bot)
-        except Exception as e:
-            log(f"ERR {e}")
+        except:
             await asyncio.sleep(5)
 
 if __name__ == "__main__":
