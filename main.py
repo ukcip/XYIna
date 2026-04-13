@@ -5,7 +5,7 @@ import string
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
     Message, InlineKeyboardMarkup, InlineKeyboardButton,
-    CallbackQuery
+    CallbackQuery, ReplyKeyboardRemove
 )
 from aiogram.filters import Command
 
@@ -53,9 +53,15 @@ def back_kb():
 # ===== СТАРТ =====
 @dp.message(Command("start"))
 async def start(message: Message):
+    # 💥 УДАЛЯЕМ старые кнопки
     await message.answer(
         "🔥 Добро пожаловать в магазин от @ukcip📦\n"
-        "Здесь вы можете приобрести доступ к привату💸\n\n"
+        "Здесь вы можете приобрести доступ к привату💸",
+        reply_markup=ReplyKeyboardRemove()
+    )
+
+    # 👉 создаем одно основное сообщение
+    await message.answer(
         "Выберите способ оплаты:",
         reply_markup=main_kb()
     )
