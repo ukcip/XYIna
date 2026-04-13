@@ -4,8 +4,8 @@ import string
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import (
-    Message, ReplyKeyboardMarkup, KeyboardButton,
-    InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+    Message, InlineKeyboardMarkup, InlineKeyboardButton,
+    CallbackQuery
 )
 from aiogram.filters import Command
 from aiogram.exceptions import TelegramRetryAfter
@@ -18,7 +18,7 @@ PRIVATE_LINK = "https://t.me/+O9tLSO8g5MsyYThi"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# ===== АНТИ-ФЛУД ФУНКЦИЯ =====
+# ===== АНТИ-ФЛУД =====
 async def safe_send(func, *args, **kwargs):
     try:
         return await func(*args, **kwargs)
@@ -26,41 +26,125 @@ async def safe_send(func, *args, **kwargs):
         await asyncio.sleep(e.retry_after)
         return await func(*args, **kwargs)
 
-# ===== ХРАНЕНИЕ КОДОВ =====
+# ===== АВТО-УДАЛЕНИЕ =====
+async def auto_delete(msg, delay=30):
+    await asyncio.sleep(delay)
+    try:
+        await msg.delete()
+    except:
+        pass
+
+# ===== КОДЫ =====
 codes = {}
 
 def generate_code():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
-# ===== КНОПКИ =====
-kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text="💳 Оплата картой"), KeyboardButton(text="💰 Оплата криптой")],
-        [KeyboardButton(text="✅ Я оплатил")]
-    ],
-    resize_keyboard=True
-)
+# ===== ГЛАВНОЕ МЕНЮ =====
+def main_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="💳 Оплата картой", callback_data="card"),
+            InlineKeyboardButton(text="💰 Оплата криптой", callback_data="crypto")
+        ],
+        [
+            InlineKeyboardButton(text="⭐ Оплата звёздами", callback_data="stars")
+        ],
+        [
+            InlineKeyboardButton(text="💎 Донат", callback_data="donate")
+        ]
+    ])
+
+# ===== НАЗАД =====
+def back_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅ Назад", callback_data="back")]
+    ])
 
 # ===== СТАРТ =====
 @dp.message(Command("start"))
 async def start(message: Message):
-    await safe_send(message.answer, "Выберите способ оплаты:", reply_markup=kb)
-
-# ===== ОПЛАТА =====
-@dp.message(F.text.in_(["💳 Оплата картой", "💰 Оплата криптой"]))
-async def payment(message: Message):
-    code = generate_code()
-    codes[message.from_user.id] = code
-
-    await safe_send(
+    msg = await safe_send(
         message.answer,
-        f"💸 Оплатите и укажите код в комментарии:\n\n👉 {code}\n\nПосле оплаты нажмите 'Я оплатил'"
+        "🔥 Добро пожаловать в магазин от @ukcip📦\n"
+        "Здесь вы можете приобрести доступ к привату💸\n\n"
+        "Выберите способ оплаты:",
+        reply_markup=main_kb()
+    )
+    asyncio.create_task(auto_delete(msg))
+
+# ===== НАЗАД =====
+@dp.callback_query(F.data == "back")
+async def back(callback: CallbackQuery):
+    await start(callback.message)
+    await callback.answer()
+
+# ===== КАРТА =====
+@dp.callback_query(F.data == "card")
+async def card(callback: CallbackQuery):
+    code = generate_code()
+    codes[callback.from_user.id] = code
+
+    msg = await safe_send(
+        callback.message.answer,
+        f"💳 Оплата картой\n\n"
+        f"💰 120₽\n"
+        f"📌 2202208290305953\n"
+        f"Сбербанк | Даниил С.\n\n"
+        f"❗ УКАЖИТЕ КОД:\n👉 {code}",
+        reply_markup=back_kb()
     )
 
-# ===== Я ОПЛАТИЛ =====
-@dp.message(F.text == "✅ Я оплатил")
-async def paid(message: Message):
-    await safe_send(message.answer, "📸 Пришлите скрин оплаты С ВИДНЫМ КОДОМ")
+    asyncio.create_task(auto_delete(msg))
+    await callback.answer()
+
+# ===== КРИПТА =====
+@dp.callback_query(F.data == "crypto")
+async def crypto(callback: CallbackQuery):
+    code = generate_code()
+    codes[callback.from_user.id] = code
+
+    msg = await safe_send(
+        callback.message.answer,
+        f"💰 Оплата криптой:\n"
+        f"http://t.me/send?start=IVWM9jtSGhiL\n\n"
+        f"❗ УКАЖИТЕ КОД:\n👉 {code}",
+        reply_markup=back_kb()
+    )
+
+    asyncio.create_task(auto_delete(msg))
+    await callback.answer()
+
+# ===== ЗВЕЗДЫ =====
+@dp.callback_query(F.data == "stars")
+async def stars(callback: CallbackQuery):
+    msg = await safe_send(
+        callback.message.answer,
+        "⭐ Оплата звёздами\n\n"
+        "📌 Отправьте админу @ukcip:\n"
+        "• 50 ⭐\n"
+        "• затем 15 ⭐\n\n"
+        "⏳ Выдача в течение 24 часов",
+        reply_markup=back_kb()
+    )
+
+    asyncio.create_task(auto_delete(msg))
+    await callback.answer()
+
+# ===== ДОНАТ =====
+@dp.callback_query(F.data == "donate")
+async def donate(callback: CallbackQuery):
+    msg = await safe_send(
+        callback.message.answer,
+        "💎 Поддержать проект\n\n"
+        "💰 Крипта: http://t.me/send?start=IVjeLAEQlLzA\n"
+        "🪙 TON: UQDQo76coCyRrsJmrxiwakSU1765516jTjGfW7rHjHUqfHBu\n"
+        "💳 Сбербанк: 2202208290305953 Даниил С.",
+        reply_markup=back_kb()
+    )
+
+    asyncio.create_task(auto_delete(msg))
+    await callback.answer()
 
 # ===== СКРИН =====
 @dp.message(F.photo)
@@ -97,7 +181,8 @@ async def screenshot(message: Message):
         reply_markup=kb_inline
     )
 
-    await safe_send(message.answer, "⏳ Ваша оплата отправлена на проверку")
+    msg = await safe_send(message.answer, "⏳ Оплата отправлена на проверку")
+    asyncio.create_task(auto_delete(msg))
 
 # ===== ПРИНЯТЬ =====
 @dp.callback_query(F.data.startswith("accept_"))
